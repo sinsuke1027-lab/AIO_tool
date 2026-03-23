@@ -73,11 +73,7 @@ def setup_sidebar():
             import google.generativeai as genai
             genai.configure(api_key=api_key)
             
-            # Explicitly reload core modules to avoid dataclass caching issues
-            import importlib
-            from core import models, analyzer
-            importlib.reload(models)
-            importlib.reload(analyzer)
+            from core import analyzer
             
             available_models = analyzer.get_available_models()
             # Try to find a good default (1.5 pro is best for this tool)
@@ -86,7 +82,8 @@ def setup_sidebar():
                 if "1.5-pro" in m:
                     default_index = i
                     break
-            selected_model = st.sidebar.selectbox("Select Gemini Model", options=available_models, index=default_index)
+            selected_model = st.sidebar.selectbox("Select Gemini Model", options=available_models, index=default_index, key="selected_model_dropdown")
+            st.session_state["selected_model"] = selected_model
         except Exception as e:
             st.sidebar.error(f"Error fetching models: {e}")
             selected_model = st.sidebar.text_input("Model Name (Fallback)", value="gemini-1.5-pro")
@@ -139,15 +136,18 @@ def main():
             return
             
         try:
-            result = asyncio.run(run_analysis(url, api_key, model_name, analysis_mode))
-            if isinstance(result, AnalysisResult):
-                display_results(result)
-            else:
-                display_domain_results(result)
+            st.session_state['analysis_result'] = asyncio.run(run_analysis(url, api_key, model_name, analysis_mode))
         except Exception as e:
             st.error(f"エラーが発生しました: {str(e)}")
             import traceback
             st.expander("Show detailed error").code(traceback.format_exc())
+
+    if 'analysis_result' in st.session_state:
+        result = st.session_state['analysis_result']
+        if isinstance(result, AnalysisResult):
+            display_results(result)
+        else:
+            display_domain_results(result)
 
 def display_domain_results(result: DomainAnalysisResult):
     st.divider()
@@ -191,11 +191,11 @@ def display_results(result: AnalysisResult):
     # Overview metrics
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown(f'<div class="metric-card"><h3>Overall AIO Score</h3><h1 style="color:#4b6cb7;">{result.total_score}</h1></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><h3>総合AIOスコア</h3><h1 style="color:#4b6cb7;">{result.total_score}</h1></div>', unsafe_allow_html=True)
     with col2:
-        st.markdown(f'<div class="metric-card"><h3>Information Gain</h3><h1>{"High" if result.sub_scores.get("Information Gain", 0) > 70 else "Normal"}</h1></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><h3>情報増分 (独自性)</h3><h1>{"高い" if result.sub_scores.get("情報増分 (Information Gain)", 0) > 70 else "普通"}</h1></div>', unsafe_allow_html=True)
     with col3:
-        st.markdown(f'<div class="metric-card"><h3>Direct Answer</h3><h1>{"Yes" if result.sub_scores.get("Direct Answerability", 0) > 70 else "Needs Fix"}</h1></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="metric-card"><h3>直接回答性</h3><h1>{"あり" if result.sub_scores.get("直接回答性 (Direct Answerability)", 0) > 70 else "要改善"}</h1></div>', unsafe_allow_html=True)
 
     # Sub-metrics progress bars
     st.subheader("📊 解析サブ指標 (Advanced AIO Metrics)")
@@ -265,10 +265,10 @@ def display_results(result: AnalysisResult):
     
     if st.button("✨ 修正案を生成する", type="secondary", key=f"gen_btn_{result.scraped_data.url}"):
         with st.spinner("AIがコンテンツをリライト中..."):
-            analyzer = AIOAnalyzer(api_key=st.session_state.get("api_key"))
-            # We need to ensure we have the API key. In run_analysis it was passed.
-            # Here we might need to get it from sidebar state or global.
-            opt_content = asyncio.run(analyzer.generate_optimized_content(result))
+            api_key = os.getenv("GEMINI_API_KEY") or st.session_state.get("api_settings", {}).get("api_key")
+            analyzer = AIOAnalyzer(api_key=api_key)
+            model_name = st.session_state.get("selected_model", "gemini-1.5-pro-latest")
+            opt_content = asyncio.run(analyzer.generate_optimized_content(result, model_name=model_name))
             st.session_state[gen_key] = opt_content
 
     if gen_key in st.session_state:

@@ -1,6 +1,7 @@
 import google.generativeai as genai
 import json
 import os
+import asyncio
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from .models import ScrapedData, AIOScore, AIOInsight, AnalysisResult, DomainAnalysisResult
@@ -15,7 +16,7 @@ def get_available_models() -> List[str]:
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 name = m.name.split("/")[-1]
-                if "gemini" in name.lower() and not any(x in name.lower() for x in ["vision", "tuned", "experimental"]):
+                if "gemini" in name.lower() and not any(x in name.lower() for x in ["vision", "tuned", "experimental", "tts", "audio", "embed"]):
                     models.append(name)
         def sort_key(name):
             try: return preferred.index(name)
@@ -34,10 +35,40 @@ class AIOAnalyzer:
             raise ValueError("GEMINI_API_KEY not found in environment or arguments")
         genai.configure(api_key=api_key)
 
+    async def _generate_with_retry(self, model, prompt, generation_config=None, max_retries=3):
+        import re
+        for attempt in range(max_retries):
+            try:
+                if generation_config:
+                    return model.generate_content(prompt, generation_config=generation_config)
+                else:
+                    return model.generate_content(prompt)
+            except Exception as e:
+                error_msg = str(e)
+                if "429" in error_msg:
+                    # Daily Quota is exhausted -> No point in retrying.
+                    if "GenerateRequestsPerDay" in error_msg:
+                        raise RuntimeError(f"1日のリクエスト制限(Daily Quota)に達しました。別のモデル（gemini-1.5-flashなど）を選択するか、しばらく時間を空けてから再度お試しください。\n詳細: {error_msg}")
+                    
+                    if attempt < max_retries - 1:
+                        # Attempt to parse retry_delay from the error message
+                        delay = 30 # default wait time
+                        match = re.search(r"retry_delay\s*\{\s*seconds:\s*(\d+)", error_msg)
+                        if match:
+                            delay = int(match.group(1)) + 5 # Add 5s buffer 
+                        
+                        await asyncio.sleep(delay)
+                    else:
+                        raise RuntimeError(f"APIのレート制限(429)により複数回リトライしましたが失敗しました。モデルを変更するか、さらに時間を空けてから再試行してください。\n詳細: {error_msg}")
+                else:
+                    raise e
+
+                    
     async def analyze(self, data: ScrapedData, model_name: str = "gemini-1.5-pro") -> AnalysisResult:
         prompt = self._build_prompt(data)
         model = genai.GenerativeModel(model_name)
-        response = model.generate_content(
+        response = await self._generate_with_retry(
+            model,
             prompt,
             generation_config=genai.GenerationConfig(
                 response_mime_type="application/json",
@@ -85,7 +116,7 @@ class AIOAnalyzer:
 修正後のコンテンツ全体を出力してください。タイトル(H1)、イントロ（AI回答）、メイン詳細、結論を含めます。
 """
         model = genai.GenerativeModel(model_name)
-        response = model.generate_content(prompt)
+        response = await self._generate_with_retry(model, prompt)
         return response.text
 
     async def analyze_domain(self, pages: List[ScrapedData], model_name: str = "gemini-1.5-pro") -> DomainAnalysisResult:
@@ -93,9 +124,12 @@ class AIOAnalyzer:
             raise ValueError("No pages provided")
         root_url = pages[0].url
         page_results = []
-        for page in pages:
+        for i, page in enumerate(pages):
             result = await self.analyze(page, model_name=model_name)
             page_results.append(result)
+            if i < len(pages) - 1:
+                await asyncio.sleep(5) # 各ページの解析間に5秒のインターバルを設ける
+
         
         context_list = [f"Page {i+1} ({p.url}):\nTitle: {p.title}\nH1: {', '.join(p.h1)}" for i, p in enumerate(pages)]
         holistic_context = "\n\n".join(context_list)
@@ -104,6 +138,8 @@ class AIOAnalyzer:
 # Domain Analysis
 Pages: {holistic_context}
 サイト全体の専門性と一貫性を評価してください。JSON形式で出力。
+【重要1】与えられたPagesの抽出データのみに基づいて厳密に評価してください。AI自身が元々持っている企業やブランドの知識（知名度など）でスコアを底上げしてはいけません。ページのテキスト情報が極端に少ない場合はスコアを厳しく減点してください。
+【重要2】overall_summary, issue, suggestion_before, suggestion_after, impactなど、すべてのテキスト出力は必ず「日本語」で記述してください。
 {{
   "domain_total_score": integer,
   "thematic_consistency_score": integer,
@@ -113,7 +149,7 @@ Pages: {holistic_context}
 }}
 """
         model = genai.GenerativeModel(model_name)
-        response = model.generate_content(prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
+        response = await self._generate_with_retry(model, prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
         domain_json = json.loads(response.text)
         domain_insights = [AIOInsight(**insight) for insight in domain_json.get("domain_insights", [])]
         return DomainAnalysisResult(
@@ -136,9 +172,12 @@ Content: {content_snippet}
 JSON-LD: {json_ld_snippet}
 
 AI検索エンジン向けの適合度を詳細に評価してください。JSON形式で出力。
+【重要1】与えられたContent（抽出されたテキストデータ）のみに基づいて厳密に評価してください。AI自身が元々持っている企業やブランドの知識（知名度など）でスコアを底上げしてはいけません。
+【重要2】もしContentの情報量が極端に少ない、または有益なテキストデータが存在しない場合、「Information Gain(独自性)」や「Direct Answerability(直接回答性)」などのスコアは大幅に減点（例: 30点以下）し、厳しく評価してください。
+【重要3】reasoning, issue, suggestion_before, suggestion_after, impact, summaryなど、すべてのテキスト出力は必ず「日本語」で記述してください。
 {{
   "total_score": integer,
-  "sub_scores": {{ "AI Readiness": int, "Direct Answerability": int, "Information Gain": int, "Authority & Trust": int, "Entity Context": int }},
+  "sub_scores": {{ "AI対応度 (AI Readiness)": int, "直接回答性 (Direct Answerability)": int, "情報増分 (Information Gain)": int, "権威性と信頼性 (Authority)": int, "エンティティ文脈 (Entity Context)": int }},
   "model_scores": [{{ "model_name": "string", "score": int, "reasoning": "string" }}],
   "insights": [{{ "category": "string", "issue": "string", "suggestion_before": "string", "suggestion_after": "string", "impact": "string" }}],
   "summary": "string"
