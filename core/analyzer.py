@@ -138,8 +138,15 @@ class AIOAnalyzer:
 # Domain Analysis
 Pages: {holistic_context}
 サイト全体の専門性と一貫性を評価してください。JSON形式で出力。
-【重要1】与えられたPagesの抽出データのみに基づいて厳密に評価してください。AI自身が元々持っている企業やブランドの知識（知名度など）でスコアを底上げしてはいけません。ページのテキスト情報が極端に少ない場合はスコアを厳しく減点してください。
-【重要2】overall_summary, issue, suggestion_before, suggestion_after, impactなど、すべてのテキスト出力は必ず「日本語」で記述してください。
+【重要1: 厳格なスコア基準】
+AI特有の甘い採点を排除し、以下の絶対評価基準で厳密に採点してください。
+- 0-39点: 専門性が皆無で情報量も極端に少ない。
+- 40-59点: 一般的なWebサイト（平均点）。
+- 60-79点: ある程度まとまっているが、競合より優れる強い専門性はない。
+- 80-100点: ドメイン全体で圧倒的な独自一次情報と強い一貫性が証明されている（非常に厳格な基準）。
+【重要2】与えられたPagesの抽出データのみに基づいて厳密に評価してください。AI自身の知識（ブランド知名度など）でスコアを底上げしてはいけません。
+【重要3】全体として専門性・一貫性が不足している場合は、domain_total_score を強制的に 50点以下 に落としてください。
+【重要4】overall_summary, issue, suggestion_before, suggestion_after, impactなど、すべてのテキスト出力は必ず「日本語」で記述してください。
 {{
   "domain_total_score": integer,
   "thematic_consistency_score": integer,
@@ -172,9 +179,18 @@ Content: {content_snippet}
 JSON-LD: {json_ld_snippet}
 
 AI検索エンジン向けの適合度を詳細に評価してください。JSON形式で出力。
-【重要1】与えられたContent（抽出されたテキストデータ）のみに基づいて厳密に評価してください。AI自身が元々持っている企業やブランドの知識（知名度など）でスコアを底上げしてはいけません。
-【重要2】もしContentの情報量が極端に少ない、または有益なテキストデータが存在しない場合、「Information Gain(独自性)」や「Direct Answerability(直接回答性)」などのスコアは大幅に減点（例: 30点以下）し、厳しく評価してください。
-【重要3】reasoning, issue, suggestion_before, suggestion_after, impact, summaryなど、すべてのテキスト出力は必ず「日本語」で記述してください。
+【重要1: 厳格なスコア基準】
+AI特有の甘い採点を排除し、以下の絶対評価基準で厳密に採点してください。
+- 0-39点: 独自性がなく、構造化データも存在せず、AIが引用できないレベル。
+- 40-59点: どこにでもある一般的なWebコンテンツ（平均点）。
+- 60-79点: ある程度AIO最適化されているが、競合より優れる独自情報が弱い。
+- 80-100点: AIOとして完璧。独自の一次データ、構造化データ、明確な結論先出し構造がすべて揃っている（特別な例外のみ付与）。
+【重要2: ペナルティ要件】
+- Contentの情報量が極端に少ない場合、または有益テキストがない場合は各スコアを 30点以下 に減点。
+- JSON-LD（構造化データ）が空または不十分な場合、「AI対応度 (AI Readiness)」は 上限40点。
+- コンテンツ名から著者、一次情報、明確な引用元が確認できない場合、「権威性と信頼性 (Authority)」は 上限50点。
+【重要3】テキストデータのみで評価し、AI自身の知識（ブランド知名度など）でスコアを底上げしないこと。
+【重要4】reasoning, issue, suggestion_before, suggestion_after, impact, summaryなど、すべての出力テキストは必ず「日本語」で記述すること。
 {{
   "total_score": integer,
   "sub_scores": {{ "AI対応度 (AI Readiness)": int, "直接回答性 (Direct Answerability)": int, "情報増分 (Information Gain)": int, "権威性と信頼性 (Authority)": int, "エンティティ文脈 (Entity Context)": int }},

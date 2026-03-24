@@ -31,7 +31,7 @@ class AIOInsight:
 class AnalysisResult:
     scraped_data: ScrapedData
     total_score: int
-    # Sub-metrics: AI Readiness, Authority, Content Clarity, Mention Presence
+    # Sub-metrics: AI対応度 (AI Readiness), 直接回答性 (Direct Answerability), 情報増分 (Information Gain), 権威性と信頼性 (Authority), エンティティ文脈 (Entity Context)
     sub_scores: Dict[str, int]
     model_scores: List[AIOScore]
     insights: List[AIOInsight]
