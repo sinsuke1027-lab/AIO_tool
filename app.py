@@ -268,7 +268,7 @@ def display_results(result: AnalysisResult):
     
     if st.button("✨ 修正案を生成する", type="secondary", key=f"gen_btn_{result.scraped_data.url}"):
         with st.spinner("AIがコンテンツをリライト中..."):
-            api_key = os.getenv("GEMINI_API_KEY") or st.session_state.get("api_settings", {}).get("api_key")
+            api_key = os.getenv("GEMINI_API_KEY") or st.session_state.get("api_key")
             analyzer = AIOAnalyzer(api_key=api_key)
             model_name = st.session_state.get("selected_model", "gemini-1.5-pro-latest")
             opt_content = asyncio.run(analyzer.generate_optimized_content(result, model_name=model_name))
