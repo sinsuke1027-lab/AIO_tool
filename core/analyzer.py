@@ -194,7 +194,11 @@ AI特有の甘い採点を排除し、以下の絶対評価基準で厳密に採
 {{
   "total_score": integer,
   "sub_scores": {{ "AI対応度 (AI Readiness)": int, "直接回答性 (Direct Answerability)": int, "情報増分 (Information Gain)": int, "権威性と信頼性 (Authority)": int, "エンティティ文脈 (Entity Context)": int }},
-  "model_scores": [{{ "model_name": "string", "score": int, "reasoning": "string" }}],
+  "model_scores": [
+    {{ "model_name": "Perplexity", "score": int, "reasoning": "string" }},
+    {{ "model_name": "SearchGPT", "score": int, "reasoning": "string" }},
+    {{ "model_name": "Gemini SGE", "score": int, "reasoning": "string" }}
+  ],
   "insights": [{{ "category": "string", "issue": "string", "suggestion_before": "string", "suggestion_after": "string", "impact": "string" }}],
   "summary": "string"
 }}

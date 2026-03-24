@@ -226,11 +226,14 @@ def display_results(result: AnalysisResult):
             st.caption("No blockquotes or citations found (EEAT target).")
 
     st.subheader("🤖 各AIモデル別の適合度 (Model Simulation)")
-    m_cols = st.columns(len(result.model_scores))
-    for i, model_score in enumerate(result.model_scores):
-        with m_cols[i]:
-            st.metric(model_score.model_name, f"{model_score.score}%")
-            st.caption(model_score.reasoning)
+    if result.model_scores:
+        m_cols = st.columns(len(result.model_scores))
+        for i, model_score in enumerate(result.model_scores):
+            with m_cols[i]:
+                st.metric(model_score.model_name, f"{model_score.score}%")
+                st.caption(model_score.reasoning)
+    else:
+        st.info("モデル別のスコア・シミュレーションは出力されませんでした。")
 
     st.subheader("💡 改善のインサイト (Refined AI Insights)")
     for insight in result.insights:
